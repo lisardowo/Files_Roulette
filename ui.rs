@@ -1,0 +1,208 @@
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Layout, Rect},
+    style::{Color, Modifier, Style, Stylize},
+    texxt::{Line, Span},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
+};
+
+use crate::app::{App, MIDDLE, SYMBOLS, VISIBLE_ROWS};
+
+pub fn draw(app: &App, f: &mut Frame) {
+    let [main, footer] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(f.area());
+    let [left, center, right] = Layout::horizontal([
+        Constraint::Percentage(28),
+        Constraint::Percentage(34),
+        Constraint::Percentage(38),
+    ])
+    .areas(main);
+
+    draw_lever(app, f, left);
+    draw_reel(app, f, center);
+    draw_store(app, f, right);
+
+    f.render_widget(
+        Paragraph::new("Space: lever j/k: Choose Power Up Enter: Buy power up q: exit")
+            .style(Style::new().fg(Color::DarkGray)),
+        footer,
+    );
+}
+
+fn panel(title: &str) -> Block<'_> {
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title(Line::from(format!(" {title} ")).bold().centered())
+}
+
+fn draw_lever(app: &App, f: &mut Frame, area: Rect) {
+    let block = panel("Lever");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let [lever_area, stats_area] =
+        Layout::vertical([Constraint::Length(9), Constraint::Min(0)]).areas(inner);
+
+    let down = app.lever_down();
+    let knob = Style::new().fg(Color::Red).bold();
+    let rod = Style::new().fg(Color::Gray);
+    let base = Style::new().fg(Color::DarkGray);
+    let lever: Vec<Line> = if down {
+        vec![
+            Line::raw(""),
+            Line::raw(""),
+            Line::raw(""),
+            Line::raw(""),
+            Line::styled("═══╤═══", base),
+            Line::styled("   │", rod),
+            Line::styled("   │", rod),
+            Line::styled("   ●", knob),
+            Line::raw(""),
+        ]
+    } else {
+        vec![
+            Line::styled("   ●", knob),
+            Line::styled("   │", rod),
+            Line::styled("   │", rod),
+            Line::styled("═══╧═══", base),
+            Line::raw(""),
+            Line::raw(""),
+            Line::raw(""),
+            Line::raw(""),
+            Line::raw(""),
+        ]
+    };
+
+    f.render_widget(
+        Paragraph::new(lever).alignment(Alignment::Center),
+        lever_area,
+    );
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::raw(" Points: "),
+            Span::styled(
+                app.points.to_string(),
+                Style::new().fg(Color::Yellow).bold(),
+            ),
+        ]),
+        Line::from(format!(" Total points: {}", app.total_won)),
+        Line::from(format!(" Spin #: {}", app.spins)),
+        Line::raw(""),
+        Line::styled(
+            " Last Pulls: :",
+            Style::new().add_modifier(Modifier::UNDERLINED),
+        ),
+    ];
+    match app.last {
+        Some((sym, pay)) => {
+            let (glyph, name, color, ..) = SYMBOLS[sym];
+            lines.push(Line::from(vec![
+                Span::raw(""),
+                Span::styled(name, Style::new().fg(color).bold()),
+                Span::styled(format!(" +{pay}"), Style::new().fg(Color::Green)),
+            ]));
+        }
+        None => lines.push(Line::styled(" --", Style::new().fg(Color::DarkGray))),
+    }
+
+    if app.upgrades[crate::app::PASSIVE].level > 0 {
+        lines.push(Line::raw(""));
+        lines.push(Line::styled(
+            format!(" +{}/s powerups", app.upgrades[crate::app::PASSIVE].level),
+            Style::new().fg(Color::DarkGray),
+        ));
+    }
+
+    f.render_widget(Paragraph::new(lines), stats_area)
+}
+
+fn draw_reel(app: &App, f: &mut Frame, area: Rect) {
+    let block = panel("Slot");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let rows = Layout::vertical([Constraint::Fill(1); VISIBLE_ROWS]).split(inner);
+    for (i, (&sym, &row)) in app.reel.iter().zip(rows.iter()).enumerate() {
+        let last = i == VISIBLE_ROWS - 1;
+        let borders = if last {
+            Borders::TOP | Borders::BOTTOM
+        } else {
+            Borders::TOP
+        };
+        let cell = Block::default()
+            .borders(borders)
+            .border_style(Style::new().fg(Color::DarkGray));
+
+        let cell_inner = cell.inner(row);
+        f.render_widget(cell, row);
+
+        let (_, name, color, ..) = SYMBOLS[sym];
+        let mid = i == MIDDLE;
+        let mut style = Style::new().fg(color);
+
+        if mid {
+            style = style.bold().bg(Color::Rgb(40, 40, 40));
+        } else {
+            style = style.add_modifier(Modifier::DIM);
+        }
+
+        let mut spans = vec![];
+
+        if mid {
+            spans.push(Span::styled("► ", Style::new().fg(Color::Yellow).bold()));
+        }
+        spans.push(Span::styled(name, style));
+        if mid {
+            spans.push(Span::styled(" ◄", Style::new().fg(Color::Yellow).bold()));
+        }
+
+        let pad = cell_inner.height.saturating_sub(1) / 2;
+        let mut lines: Vec<Line> = (0..pad).map(|_| Line::raw("")).collect();
+        lines.push(Line::from(spans));
+        let mut p = Paragraph::new(lines).alignment(Alignment::Center);
+        if mid {
+            p = p.style(Style::new().bg(Color::Rgb(40, 40, 40)));
+        }
+        f.render_widget(p, cell_inner);
+    }
+}
+
+fn draw_store(app: &App, f: &mut Frame, area: Rect) {
+    let mut block = panel("Store");
+    if !app.message.is_empty {
+        block = block.title_bottom(Line::from(app.message.as_str()).yellow().centered());
+    }
+    let items: Vec<ListItem> = app
+        .upgrades()
+        .iter()
+        .map(|u| {
+            let price = if u.maxed() {
+                Span::styled("MAX", Style::new().fg(Color::Magenta).bold())
+            } else if app.points >= u.cost() {
+                Span::styled(format!("{} pts", u.cost()), Style::new().fg(Color::Green))
+            } else {
+                Span::styled(format!("{} pts", u.cost()), Style::new().fg(Color::Red))
+            };
+
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(u.name, Style::new().bold()),
+                    Span::styled(
+                        format!(" lvl {}/{}", u.level, u.max),
+                        Style::new().fg(Color::Cyan),
+                    ),
+                ]),
+                Line::from(vec![Span::styled(u.desc, Style::new().fg(Color::Gray))]),
+                Line::from(vec![Span::raw("Price: "), price])
+                Line::raw("",)
+            ])
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(block)
+        .highlight_symbol("▶ ")
+        .highlight_style(Style::new().bg(Color::Rgb(40, 40, 40)));
+    let mut state = ListState::default().with_selected(Some(app.selected));
+    f.render_stateful_widget(list, area, &mut state);
+}
