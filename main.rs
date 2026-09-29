@@ -1,7 +1,7 @@
 mod app;
+mod handleFile;
+mod menu;
 mod ui;
-
-use std::io;
 
 use app::App;
 
