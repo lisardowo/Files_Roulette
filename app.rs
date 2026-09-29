@@ -4,30 +4,30 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rand::{distributions::WeightedIndex, prelude::*};
+use rand::{distr::weighted::WeightedIndex, prelude::*, rng};
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEventKind}
-    style::Color,
     DefaultTerminal,
+    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    style::Color,
 };
 
 use crate::ui;
 
-pub const SYMBOLS: [(&str, Colorr, u64, u32); 6] = [
+pub const SYMBOLS: [(&str, Color, u64, u32); 6] = [
+    //name, Color, points, odds
     ("a", Color::Red, 1, 40),
     ("b", Color::Yellow, 2, 28),
     ("c", Color::Green, 3, 18),
     ("d", Color::Cyan, 5, 9),
     ("e", Color::Magenta, 10, 4),
     ("f", Color::LightRed, 50, 1),
-
 ];
 
 pub const VISIBLE_ROWS: usize = 5;
-pub const MIDDLE: usize = VISIBLE_ROWS/2;
-pub const SPIN_STEPS = 20
+pub const MIDDLE: usize = VISIBLE_ROWS / 2;
+pub const SPIN_STEPS: u32 = 20;
 
-pub struct Upgrade{
+pub struct Upgrade {
     pub name: &'static str,
     pub desc: &'static str,
     pub base_cost: u64,
@@ -36,7 +36,6 @@ pub struct Upgrade{
 }
 
 impl Upgrade {
-    
     pub fn cost(&self) -> u64 {
         (self.base_cost as f64 * 1.7f64.powi(self.level as i32)) as u64
     }
@@ -56,7 +55,6 @@ pub struct Spin {
     pub next: Instant,
 }
 
-
 pub struct App {
     pub points: u64,
     pub total_won: u64,
@@ -72,12 +70,22 @@ pub struct App {
     quit: bool,
     rng: ThreadRng,
 }
- 
+
 impl App {
     pub fn new() -> Self {
-        let mut rng = thread_rng();
-        let reel = (0..VISIBLE_ROWS).map(|_| rng.gen_range(0..SYMBOLS.len())).collect();
-        let up = |name, desc, base_cost| Upgrade { name, desc, base_cost, level: 0, max: 5 };
+        let mut rng = rng();
+        let reel = (0..VISIBLE_ROWS)
+            .map(|_| rng.random_range(0..SYMBOLS.len()))
+            .collect();
+        let up = |name, desc, base_cost| Upgrade {
+            //TODO
+            //unused up
+            name,
+            desc,
+            base_cost,
+            level: 0,
+            max: 5,
+        };
         Self {
             points: 0,
             total_won: 0,
@@ -86,7 +94,11 @@ impl App {
             spin: None,
             last: None,
             upgrades: vec![
-                //up("foo", "desc", price),
+                up("foo", "desc", 67),
+                up("foo", "desc", 67),
+                up("foo", "desc", 67),
+                up("foo", "desc", 67),
+                up("foo", "desc", 67),
             ],
             selected: 0,
             message: String::new(),
@@ -96,28 +108,32 @@ impl App {
             rng,
         }
     }
- 
+
     fn pick_result(&mut self) -> usize {
         let luck = self.upgrades[LUCK].level;
         let weights: Vec<u32> = SYMBOLS
             .iter()
             .enumerate()
-            .map(|(i, s)| s.4 * (100 + luck * 25 * i as u32))
+            .map(|(i, s)| s.3 * (100 + luck * 25 * i as u32))
             .collect();
         WeightedIndex::new(weights).unwrap().sample(&mut self.rng)
     }
- 
+
     pub fn pull(&mut self) {
         if self.spin.is_some() {
             return;
         }
         let result = self.pick_result();
-        self.spin = Some(Spin { left: SPIN_STEPS, result, next: Instant::now() });
+        self.spin = Some(Spin {
+            left: SPIN_STEPS,
+            result,
+            next: Instant::now(),
+        });
     }
- 
+
     fn finish(&mut self, sym: usize) {
         let mult = 100 + 50 * self.upgrades[MULT].level as u64;
-        let payout = SYMBOLS[sym].3 * mult / 100;
+        let payout = SYMBOLS[sym].2 * mult / 100;
         self.points += payout;
         self.total_won += payout;
         self.spins += 1;
@@ -125,7 +141,7 @@ impl App {
         let auto = self.upgrades[AUTO].level as u64;
         self.auto_at = Instant::now() + Duration::from_millis(8000u64.saturating_sub(1500 * auto));
     }
- 
+
     pub fn buy(&mut self) {
         let u = &mut self.upgrades[self.selected];
         if u.maxed() {
@@ -138,26 +154,25 @@ impl App {
             self.message = format!(" {} level {}! ", u.name, u.level);
         }
     }
- 
+
     pub fn tick(&mut self) {
         let now = Instant::now();
- 
+
         while now.duration_since(self.last_income) >= Duration::from_secs(1) {
             self.last_income += Duration::from_secs(1);
             self.points += self.upgrades[PASSIVE].level as u64;
         }
- 
+
         if self.spin.is_none() && self.upgrades[AUTO].level > 0 && now >= self.auto_at {
             self.pull();
         }
- 
+
         if let Some(mut s) = self.spin.take() {
             if now >= s.next {
-
                 let sym = if s.left == MIDDLE as u32 + 1 {
                     s.result
                 } else {
-                    self.rng.gen_range(0..SYMBOLS.len())
+                    self.rng.random_range(0..SYMBOLS.len())
                 };
                 self.reel.push_front(sym);
                 self.reel.pop_back();
@@ -172,13 +187,16 @@ impl App {
             self.spin = Some(s);
         }
     }
- 
+
     fn on_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char(' ') => self.pull(),
             KeyCode::Up | KeyCode::Char('k') => {
-                self.selected = self.selected.checked_sub(1).unwrap_or(self.upgrades.len() - 1)
+                self.selected = self
+                    .selected
+                    .checked_sub(1)
+                    .unwrap_or(self.upgrades.len() - 1)
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 self.selected = (self.selected + 1) % self.upgrades.len()
@@ -191,7 +209,7 @@ impl App {
     pub fn lever_down(&self) -> bool {
         self.spin.as_ref().is_some_and(|s| s.left > SPIN_STEPS - 4)
     }
- 
+
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.quit {
             terminal.draw(|f| ui::draw(self, f))?;
@@ -207,4 +225,3 @@ impl App {
         Ok(())
     }
 }
-

@@ -2,7 +2,7 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
-    texxt::{Line, Span},
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
 };
 
@@ -95,7 +95,7 @@ fn draw_lever(app: &App, f: &mut Frame, area: Rect) {
     ];
     match app.last {
         Some((sym, pay)) => {
-            let (glyph, name, color, ..) = SYMBOLS[sym];
+            let (name, color, ..) = SYMBOLS[sym];
             lines.push(Line::from(vec![
                 Span::raw(""),
                 Span::styled(name, Style::new().fg(color).bold()),
@@ -136,7 +136,7 @@ fn draw_reel(app: &App, f: &mut Frame, area: Rect) {
         let cell_inner = cell.inner(row);
         f.render_widget(cell, row);
 
-        let (_, name, color, ..) = SYMBOLS[sym];
+        let (name, color, ..) = SYMBOLS[sym];
         let mid = i == MIDDLE;
         let mut style = Style::new().fg(color);
 
@@ -169,11 +169,11 @@ fn draw_reel(app: &App, f: &mut Frame, area: Rect) {
 
 fn draw_store(app: &App, f: &mut Frame, area: Rect) {
     let mut block = panel("Store");
-    if !app.message.is_empty {
+    if !app.message.is_empty() {
         block = block.title_bottom(Line::from(app.message.as_str()).yellow().centered());
     }
     let items: Vec<ListItem> = app
-        .upgrades()
+        .upgrades
         .iter()
         .map(|u| {
             let price = if u.maxed() {
@@ -193,8 +193,8 @@ fn draw_store(app: &App, f: &mut Frame, area: Rect) {
                     ),
                 ]),
                 Line::from(vec![Span::styled(u.desc, Style::new().fg(Color::Gray))]),
-                Line::from(vec![Span::raw("Price: "), price])
-                Line::raw("",)
+                Line::from(vec![Span::raw("Price: "), price]),
+                Line::raw(""),
             ])
         })
         .collect();
