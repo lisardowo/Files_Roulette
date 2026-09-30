@@ -35,6 +35,18 @@ fn panel(title: &str) -> Block<'_> {
         .title(Line::from(format!(" {title} ")).bold().centered())
 }
 
+fn shorten_path(path: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+
+    let chars: Vec<char> = path.chars().collect();
+    if chars.len() <= max {
+        return path.to_string();
+    }
+    let tail: String = chars[chars.len() - (max - 1)..].iter().collect();
+    format!("..{tail}")
+}
 fn draw_lever(app: &App, f: &mut Frame, area: Rect) {
     let block = panel("Lever");
     let inner = block.inner(area);
@@ -93,16 +105,20 @@ fn draw_lever(app: &App, f: &mut Frame, area: Rect) {
             Style::new().add_modifier(Modifier::UNDERLINED),
         ),
     ];
-    match app.last {
-        Some((sym, pay)) => {
-            let (name, color, ..) = SYMBOLS[sym];
+
+    match (&app.last, &app.last_path) {
+        (Some((sym, pay)), Some(path)) => {
+            let (_, color, ..) = SYMBOLS[*sym];
             lines.push(Line::from(vec![
-                Span::raw(""),
-                Span::styled(name, Style::new().fg(color).bold()),
-                Span::styled(format!(" +{pay}"), Style::new().fg(Color::Green)),
+                Span::raw(" "),
+                Span::styled(shorten_path(path, 24), Style::new().fg(color).bold()),
+            ]));
+            lines.push(Line::from(vec![
+                Span::raw(" "),
+                Span::styled(format!("+{pay}"), Style::new().fg(Color::Green)),
             ]));
         }
-        None => lines.push(Line::styled(" --", Style::new().fg(Color::DarkGray))),
+        _ => lines.push(Line::styled(" —", Style::new().fg(Color::DarkGray))),
     }
 
     if app.upgrades[crate::app::PASSIVE].level > 0 {
@@ -122,7 +138,9 @@ fn draw_reel(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(block, area);
 
     let rows = Layout::vertical([Constraint::Fill(1); VISIBLE_ROWS]).split(inner);
-    for (i, (&sym, &row)) in app.reel.iter().zip(rows.iter()).enumerate() {
+
+    let cells = app.reel.iter().zip(app.reel_paths.iter()).zip(rows.iter());
+    for (i, ((&sym, &path_idx), &row)) in cells.enumerate() {
         let last = i == VISIBLE_ROWS - 1;
         let borders = if last {
             Borders::TOP | Borders::BOTTOM
@@ -132,26 +150,27 @@ fn draw_reel(app: &App, f: &mut Frame, area: Rect) {
         let cell = Block::default()
             .borders(borders)
             .border_style(Style::new().fg(Color::DarkGray));
-
         let cell_inner = cell.inner(row);
         f.render_widget(cell, row);
 
-        let (name, color, ..) = SYMBOLS[sym];
+        let (_, color, ..) = SYMBOLS[sym];
         let mid = i == MIDDLE;
         let mut style = Style::new().fg(color);
-
         if mid {
             style = style.bold().bg(Color::Rgb(40, 40, 40));
         } else {
             style = style.add_modifier(Modifier::DIM);
         }
-
         let mut spans = vec![];
-
         if mid {
             spans.push(Span::styled("► ", Style::new().fg(Color::Yellow).bold()));
         }
-        spans.push(Span::styled(name, style));
+        let avail = cell_inner
+            .width
+            .saturating_sub(if mid { 4 } else { 0 })
+            .max(1) as usize;
+        let text = shorten_path(&app.paths[path_idx], avail);
+        spans.push(Span::styled(text, style));
         if mid {
             spans.push(Span::styled(" ◄", Style::new().fg(Color::Yellow).bold()));
         }

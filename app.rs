@@ -1,6 +1,7 @@
 use std::{
     collections::VecDeque,
     io,
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -11,18 +12,7 @@ use ratatui::{
     style::Color,
 };
 
-use crate::handleFile;
 use crate::ui;
-
-pub const SYMBOLS: [(&str, Color, u64, u32); 6] = [
-    //name, Color, points, odds
-    ("a", Color::Red, 1, 40),
-    ("b", Color::Yellow, 2, 28),
-    ("c", Color::Green, 3, 18),
-    ("d", Color::Cyan, 5, 9),
-    ("e", Color::Magenta, 10, 4),
-    ("f", Color::LightRed, 50, 1),
-];
 
 pub const VISIBLE_ROWS: usize = 5;
 pub const MIDDLE: usize = VISIBLE_ROWS / 2;
@@ -53,6 +43,7 @@ pub const AUTO: usize = 3;
 pub struct Spin {
     pub left: u32,
     pub result: usize,
+    pub result_path: usize,
     pub next: Instant,
 }
 
@@ -61,8 +52,13 @@ pub struct App {
     pub total_won: u64,
     pub spins: u64,
     pub reel: VecDeque<usize>,
+
+    pub reel_paths: VecDeque<usize>,
+
+    pub paths: Vec<String>,
     pub spin: Option<Spin>,
     pub last: Option<(usize, u64)>,
+    pub last_path: Option<String>,
     pub upgrades: Vec<Upgrade>,
     pub selected: usize,
     pub message: String,
@@ -73,10 +69,22 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(paths: Vec<PathBuf>) -> Self {
+        let mut paths: Vec<String> = paths
+            .into_iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+
+        if paths.is_empty() {
+            paths.push("unable to find files").to_string();
+        }
+
         let mut rng = rng();
         let reel = (0..VISIBLE_ROWS)
             .map(|_| rng.random_range(0..SYMBOLS.len()))
+            .collect();
+        let reel_paths = (0..VISIBLE_ROWS)
+            .map(|_| rng.random_range(0..paths.len()))
             .collect();
         let up = |name, desc, base_cost| Upgrade {
             //TODO
@@ -92,8 +100,11 @@ impl App {
             total_won: 0,
             spins: 0,
             reel,
+            reel_paths,
+            paths,
             spin: None,
             last: None,
+            last_path: None,
             upgrades: vec![
                 up("foo", "desc", 67),
                 up("foo", "desc", 67),
@@ -120,14 +131,20 @@ impl App {
         WeightedIndex::new(weights).unwrap().sample(&mut self.rng)
     }
 
+    fn random_path_index(&mut self) -> usize {
+        self.rng.random_range(0..self.paths.len())
+    }
+
     pub fn pull(&mut self) {
         if self.spin.is_some() {
             return;
         }
         let result = self.pick_result();
+        let result_path = self.random_path_index();
         self.spin = Some(Spin {
             left: SPIN_STEPS,
             result,
+            result_path,
             next: Instant::now(),
         });
     }
@@ -159,24 +176,27 @@ impl App {
     pub fn tick(&mut self) {
         let now = Instant::now();
 
-        while now.duration_since(self.last_income) >= Duration::from_secs(1) {
-            self.last_income += Duration::from_secs(1);
-            self.points += self.upgrades[PASSIVE].level as u64;
-        }
-
         if self.spin.is_none() && self.upgrades[AUTO].level > 0 && now >= self.auto_at {
             self.pull();
         }
 
         if let Some(mut s) = self.spin.take() {
             if now >= s.next {
-                let sym = if s.left == MIDDLE as u32 + 1 {
+                let landing = s.left == MIDDLE as u32 + 1;
+                let sym = if landing {
                     s.result
                 } else {
                     self.rng.random_range(0..SYMBOLS.len())
                 };
+                let path_idx = if landing {
+                    s.result_path
+                } else {
+                    self.random_path_index()
+                };
                 self.reel.push_front(sym);
                 self.reel.pop_back();
+                self.reel_paths.push_front(path_idx);
+                self.reel_paths.pop_back();
                 s.left -= 1;
                 if s.left == 0 {
                     self.finish(s.result);
