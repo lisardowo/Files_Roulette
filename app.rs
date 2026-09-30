@@ -11,6 +11,7 @@ use ratatui::{
     style::Color,
 };
 
+use crate::handleFile;
 use crate::ui;
 
 pub const SYMBOLS: [(&str, Color, u64, u32); 6] = [

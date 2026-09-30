@@ -7,6 +7,7 @@ use app::App;
 
 fn main() {
     let mut terminal = ratatui::init();
-    let result = App::new().run(&mut terminal);
+    let _paths = menu::run(&mut terminal);
+    App::new().run(&mut terminal);
     ratatui::restore();
 }
