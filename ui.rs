@@ -8,6 +8,8 @@ use ratatui::{
 
 use crate::app::{App, BURST_OPTIONS, Focus, MIDDLE, VISIBLE_ROWS};
 
+const PATH_TAIl: usize = 3;
+
 pub fn draw(app: &App, f: &mut Frame) {
     let [main, footer] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(f.area());
@@ -49,7 +51,17 @@ fn focusable_panel(title: &str, focused: bool) -> Block<'_> {
         .title(Line::from(format!(" {title} ")).bold().centered())
 }
 
+fn last_dirs(path: &str, n: usize) -> String {
+    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if parts.len() <= n {
+        return format!("/{}", parts.join("/"));
+    }
+    let tail = parts[parts.len() - n..].join("/");
+    format!(".../{tail}")
+}
+
 fn shorten_path(path: &str, max: usize) -> String {
+    let path = last_dirs(path, PATH_TAIl);
     if max == 0 {
         return String::new();
     }

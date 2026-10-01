@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     io,
     path::PathBuf,
     time::{Duration, Instant},
@@ -73,7 +73,7 @@ pub struct App {
 
     pub paths: Vec<String>,
     pub spin: Option<Spin>,
-
+    pub deleted: HashSet<usize>,
     pub last: Option<u64>,
     pub last_path: Option<String>,
     pub burst: Option<BurstState>,
@@ -116,6 +116,7 @@ impl App {
             reel,
             paths,
             spin: None,
+            deleted: HashSet::new(),
             last: None,
             last_path: None,
             burst: None,
@@ -138,6 +139,16 @@ impl App {
 
     fn random_path_index(&mut self) -> usize {
         self.rng.random_range(0..self.paths.len())
+    }
+
+    fn deletable_index(&mut self) -> Option<usize> {
+        let candidates: Vec<usize> = (0..self.paths.len())
+            .filter(|i| !self.deleted.contains(i))
+            .collect();
+        if candidates.is_empty() {
+            return None;
+        }
+        Some(candidates[self.rng.random_range(0..candidates.len())])
     }
 
     fn unit_payout(&self) -> u64 {
@@ -175,7 +186,13 @@ impl App {
         if self.spin.is_some() {
             return;
         }
-        let result_path = self.random_path_index();
+        let result_path = match self.deletable_index() {
+            Some(idx) => idx,
+            None => {
+                self.message = "unable to find files".to_string();
+                return;
+            }
+        };
         self.spin = Some(Spin {
             left: SPIN_STEPS,
             result_path,
@@ -185,8 +202,23 @@ impl App {
 
     fn finish(&mut self) {
         self.spins += 1;
+        let landed_idx = self.reel.get(MIDDLE).copied();
         self.last_path = self.reel.get(MIDDLE).map(|idx| self.paths[*idx].clone());
         let unit = self.unit_payout();
+
+        if let Some(idx) = landed_idx {
+            if !self.deleted.contains(&idx) {
+                let target = PathBuf::from(&self.paths[idx]);
+                match handleFile::delete_file(target) {
+                    Ok(()) => {
+                        self.deleted.insert(idx);
+                    }
+                    Err(e) => {
+                        self.message = format!("unable to delete {}: {e}", self.paths[idx]);
+                    }
+                };
+            }
+        }
 
         match self.burst.as_mut() {
             Some(b) => {
@@ -252,10 +284,10 @@ impl App {
                     self.random_path_index()
                 };
                 self.reel.push_front(path_idx);
-                //delete
+                //TODO delete
                 //let address_to_delete = self.paths.remove(path_idx);
-                let address_to_delete = &self.paths[path_idx];
-                handleFile::delete_file(PathBuf::from(&address_to_delete));
+                //let address_to_delete = &self.paths[path_idx];
+                //handleFile::delete_file(PathBuf::from(&address_to_delete));
                 self.reel.pop_back();
                 s.left -= 1;
                 if s.left == 0 {
