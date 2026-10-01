@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use crate::app::{App, MIDDLE, SYMBOLS, VISIBLE_ROWS};
+use crate::app::{App, BURST_OPTIONS, Focus, MIDDLE, VISIBLE_ROWS};
 
 pub fn draw(app: &App, f: &mut Frame) {
     let [main, footer] =
@@ -23,8 +23,10 @@ pub fn draw(app: &App, f: &mut Frame) {
     draw_store(app, f, right);
 
     f.render_widget(
-        Paragraph::new("Space: lever j/k: Choose Power Up Enter: Buy power up q: exit")
-            .style(Style::new().fg(Color::DarkGray)),
+        Paragraph::new(
+            "TAB: Change Focus Space: lever j/k: Choose Power Up Enter: Buy power up q: exit",
+        )
+        .style(Style::new().fg(Color::DarkGray)),
         footer,
     );
 }
@@ -32,6 +34,18 @@ pub fn draw(app: &App, f: &mut Frame) {
 fn panel(title: &str) -> Block<'_> {
     Block::bordered()
         .border_type(BorderType::Rounded)
+        .title(Line::from(format!(" {title} ")).bold().centered())
+}
+
+fn focusable_panel(title: &str, focused: bool) -> Block<'_> {
+    let color = if focused {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(color))
         .title(Line::from(format!(" {title} ")).bold().centered())
 }
 
@@ -51,9 +65,12 @@ fn draw_lever(app: &App, f: &mut Frame, area: Rect) {
     let block = panel("Lever");
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let [lever_area, stats_area] =
-        Layout::vertical([Constraint::Length(9), Constraint::Min(0)]).areas(inner);
-
+    let [lever_area, stats_area, burst_area] = Layout::vertical([
+        Constraint::Length(9),
+        Constraint::Min(0),
+        Constraint::Length(5),
+    ])
+    .areas(inner);
     let down = app.lever_down();
     let knob = Style::new().fg(Color::Red).bold();
     let rod = Style::new().fg(Color::Gray);
@@ -106,21 +123,24 @@ fn draw_lever(app: &App, f: &mut Frame, area: Rect) {
         ),
     ];
 
-    match (&app.last, &app.last_path) {
-        (Some((sym, pay)), Some(path)) => {
-            let (_, color, ..) = SYMBOLS[*sym];
+    match (&app.burst, &app.last) {
+        (Some(b), _) => lines.push(Line::styled(
+            format!(" Spins sequenced: {}/{}", b.total - b.remaining, b.total),
+            Style::new().fg(Color::Cyan),
+        )),
+        (None, Some(pay)) => {
+            let path = app.last_path.as_deref().unwrap_or("—");
             lines.push(Line::from(vec![
                 Span::raw(" "),
-                Span::styled(shorten_path(path, 24), Style::new().fg(color).bold()),
+                Span::styled(shorten_path(path, 22), Style::new().fg(Color::Green).bold()),
             ]));
-            lines.push(Line::from(vec![
-                Span::raw(" "),
-                Span::styled(format!("+{pay}"), Style::new().fg(Color::Green)),
-            ]));
+            lines.push(Line::styled(
+                format!(" +{pay}"),
+                Style::new().fg(Color::Green),
+            ));
         }
-        _ => lines.push(Line::styled(" —", Style::new().fg(Color::DarkGray))),
+        (None, None) => lines.push(Line::styled(" —", Style::new().fg(Color::DarkGray))),
     }
-
     if app.upgrades[crate::app::PASSIVE].level > 0 {
         lines.push(Line::raw(""));
         lines.push(Line::styled(
@@ -129,7 +149,36 @@ fn draw_lever(app: &App, f: &mut Frame, area: Rect) {
         ));
     }
 
-    f.render_widget(Paragraph::new(lines), stats_area)
+    f.render_widget(Paragraph::new(lines), stats_area);
+
+    draw_burst_menu(app, f, burst_area);
+}
+
+fn draw_burst_menu(app: &App, f: &mut Frame, area: Rect) {
+    let focused = app.focus == Focus::Burst;
+    let block = focusable_panel("Racha", focused);
+
+    let items: Vec<ListItem> = BURST_OPTIONS
+        .iter()
+        .map(|&n| {
+            let (pct, total) = app.burst_preview(n);
+            ListItem::new(format!(" x{n}  ~{total} pts  (+{:.0}%)", pct * 100.0))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(block)
+        .highlight_symbol(if focused { "▶ " } else { "  " })
+        .highlight_style(if focused {
+            Style::new()
+                .bg(Color::Rgb(40, 40, 40))
+                .fg(Color::Yellow)
+                .bold()
+        } else {
+            Style::new().fg(Color::Gray)
+        });
+    let mut state = ListState::default().with_selected(Some(app.burst_selected));
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 fn draw_reel(app: &App, f: &mut Frame, area: Rect) {
@@ -139,8 +188,7 @@ fn draw_reel(app: &App, f: &mut Frame, area: Rect) {
 
     let rows = Layout::vertical([Constraint::Fill(1); VISIBLE_ROWS]).split(inner);
 
-    let cells = app.reel.iter().zip(app.reel_paths.iter()).zip(rows.iter());
-    for (i, ((&sym, &path_idx), &row)) in cells.enumerate() {
+    for (i, (&path_idx, &row)) in app.reel.iter().zip(rows.iter()).enumerate() {
         let last = i == VISIBLE_ROWS - 1;
         let borders = if last {
             Borders::TOP | Borders::BOTTOM
@@ -153,14 +201,15 @@ fn draw_reel(app: &App, f: &mut Frame, area: Rect) {
         let cell_inner = cell.inner(row);
         f.render_widget(cell, row);
 
-        let (_, color, ..) = SYMBOLS[sym];
         let mid = i == MIDDLE;
-        let mut style = Style::new().fg(color);
-        if mid {
-            style = style.bold().bg(Color::Rgb(40, 40, 40));
+        let style = if mid {
+            Style::new()
+                .fg(Color::Yellow)
+                .bold()
+                .bg(Color::Rgb(40, 40, 40))
         } else {
-            style = style.add_modifier(Modifier::DIM);
-        }
+            Style::new().fg(Color::Gray).add_modifier(Modifier::DIM)
+        };
         let mut spans = vec![];
         if mid {
             spans.push(Span::styled("► ", Style::new().fg(Color::Yellow).bold()));

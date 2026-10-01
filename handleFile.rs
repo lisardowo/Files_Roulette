@@ -21,7 +21,7 @@ pub fn getfiles(path_buffer: &mut Vec<PathBuf>) {
 
 fn choose_file() {}
 
-fn delete_file(to_delete: PathBuf) -> std::io::Result<()> {
-    fs::remove_file(to_delete)?;
-    Ok(())
-}
+//fn delete_file(to_delete: PathBuf) -> std::io::Result<()> {
+//  fs::remove_file(to_delete)?;
+//Ok(())
+//}
