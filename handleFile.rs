@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 use walkdir::WalkDir;
 
 pub fn getfiles(path_buffer: &mut Vec<PathBuf>) {
-    let root_path = "/home/lichango/Programacion/rust/Roulette/testdir"; //TODO test dir to
+    let root_path = "/"//"/home/lichango/Programacion/rust/Roulette/testdir"; //TODO test dir to
     //not mess up
     WalkDir::new(root_path)
         .into_iter()
