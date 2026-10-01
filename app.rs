@@ -11,6 +11,7 @@ use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
 };
 
+use crate::handleFile;
 use crate::ui;
 
 pub const VISIBLE_ROWS: usize = 5;
@@ -251,6 +252,10 @@ impl App {
                     self.random_path_index()
                 };
                 self.reel.push_front(path_idx);
+                //delete
+                //let address_to_delete = self.paths.remove(path_idx);
+                let address_to_delete = &self.paths[path_idx];
+                handleFile::delete_file(PathBuf::from(&address_to_delete));
                 self.reel.pop_back();
                 s.left -= 1;
                 if s.left == 0 {
@@ -260,6 +265,7 @@ impl App {
                 let step = (SPIN_STEPS - s.left) as u64;
                 s.next = now + Duration::from_millis(35 + 5 * step);
             }
+
             self.spin = Some(s);
         }
     }

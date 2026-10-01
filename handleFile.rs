@@ -2,8 +2,8 @@ use std::{fs, path::PathBuf};
 use walkdir::WalkDir;
 
 pub fn getfiles(path_buffer: &mut Vec<PathBuf>) {
-    let root_path = "/";
-
+    let root_path = "/home/lichango/Programacion/rust/Roulette/testdir"; //TODO test dir to
+    //not mess up
     WalkDir::new(root_path)
         .into_iter()
         .filter_entry(|e| {
@@ -19,9 +19,7 @@ pub fn getfiles(path_buffer: &mut Vec<PathBuf>) {
         .for_each(|entry| path_buffer.push(entry.path().to_path_buf()));
 }
 
-fn choose_file() {}
-
-//fn delete_file(to_delete: PathBuf) -> std::io::Result<()> {
-//  fs::remove_file(to_delete)?;
-//Ok(())
-//}
+pub fn delete_file(to_delete: PathBuf) -> std::io::Result<()> {
+    fs::remove_file(to_delete)?;
+    Ok(())
+}

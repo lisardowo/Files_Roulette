@@ -132,7 +132,7 @@ fn draw_lever(app: &App, f: &mut Frame, area: Rect) {
             let path = app.last_path.as_deref().unwrap_or("—");
             lines.push(Line::from(vec![
                 Span::raw(" "),
-                Span::styled(shorten_path(path, 22), Style::new().fg(Color::Green).bold()),
+                Span::styled(shorten_path(path, 10), Style::new().fg(Color::Green).bold()),
             ]));
             lines.push(Line::styled(
                 format!(" +{pay}"),
