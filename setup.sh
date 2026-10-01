@@ -1,7 +1,7 @@
 #!/bin/sh
 set-e
 
-REPO=""
+REPO="https://github.com/lisardowo/Files_Roulette.git"
 DEST="$HOME/YUP"
 
 echo "== Downloading dependecies =="
